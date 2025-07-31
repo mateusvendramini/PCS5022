@@ -9,28 +9,37 @@ from torch.utils.data import DataLoader, TensorDataset
 from lightning.pytorch.callbacks import ModelCheckpoint
 import os
 import matplotlib.pyplot as plt
-checkpoint_path = "lightning_logs/checkpoints_02"
+checkpoint_path = "lightning_logs/checkpoints_02_04"
 # 1. Ler o dataset
 data = np.load('kaggle/input/pcs-5022-competicao-deca-learn-202-task-2/dataset2.npz')
 X_train = data['X_train']
+X_train = np.nan_to_num(X_train, nan=0.0)  # Tratar NaN como zeros
 y_train = data['y_train']
 X_val = data['X_val']
+X_val = np.nan_to_num(X_val, nan=0.0)  # Tratar NaN como zeros
 y_val = data['y_val']
 X_test = data['X_test']
+X_test = np.nan_to_num(X_test, nan=0.0)  # Tratar NaN como zeros
 #device = torch_directml.device()
 
 # Calcular pesos das classes para lidar com desbalanceamento
 classes, counts = np.unique(y_train, return_counts=True)
 class_weights = counts.sum() / (len(classes) * counts)
-weights_tensor = torch.tensor(class_weights, dtype=torch.float32)#.to(device)
+#weights_tensor = torch.tensor(class_weights, dtype=torch.float32)#.to(device)
 
 # 2. Normalização (usando média e desvio padrão de X_train)
 mean = X_train.mean(axis=0)
 std = X_train.std(axis=0) + 1e-8  # evitar divisão por zero
 
+# Normalização
 X_train_norm = (X_train - mean) / std
 X_val_norm = (X_val - mean) / std
 X_test_norm = (X_test - mean) / std
+
+# Tratar NaN como zeros
+X_train_norm = np.nan_to_num(X_train_norm, nan=0.0)
+X_val_norm = np.nan_to_num(X_val_norm, nan=0.0)
+X_test_norm = np.nan_to_num(X_test_norm, nan=0.0)
 
 # 3. Preparar DataLoaders
 X_train_tensor = torch.from_numpy(X_train_norm.astype(np.float32))
@@ -63,7 +72,7 @@ class LitMLP(L.LightningModule):
     def __init__(self, input_dim):
         super().__init__()
         self.model = MLP(input_dim)
-        self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=weights_tensor[1])
+        self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=None)
     def forward(self, x):
         return self.model(x)
     def training_step(self, batch, batch_idx):
@@ -154,7 +163,7 @@ class LossLogger(L.Callback):
 
 loss_logger = LossLogger()
 trainer = L.Trainer(
-    max_epochs=3,
+    max_epochs=50,
     callbacks=[checkpoint_callback, loss_logger]
 )
 trainer.fit(model, train_loader, val_loader)
@@ -169,6 +178,7 @@ trainer.fit(model, train_loader, val_loader)
 #trainer.fit(model, train_loader, val_loader)
 # 7. Carregar melhor checkpoint
 best_model_path = checkpoint_callback.best_model_path
+print(f"Carregando melhor modelo de: {checkpoint_callback.best_model_path}")
 trained_model = LitMLP(input_dim)
 trained_model.load_state_dict(torch.load(best_model_path)["state_dict"])
 trained_model.eval()
